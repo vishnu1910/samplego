@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package personpb;
-option go_package = "github.com/example/path/gen";
+option go_package = "github.com/vishnu1910/samplego";
 
 message Person {
   string name =1;
