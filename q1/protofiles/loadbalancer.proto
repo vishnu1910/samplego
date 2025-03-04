@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package lb;
+
+option go_package = "./lbpb";
+
+// The Load Balancer service that backend servers register with and clients query.
+service LoadBalancer {
+  rpc RegisterServer(ServerInfo) returns (RegistrationAck);
+  rpc ReportLoad(LoadInfo) returns (StatusAck);
+  rpc GetBestServer(ClientRequest) returns (ServerInfo);
+}
+
+// The Backend service that processes client tasks.
+service Backend {
+  rpc ProcessTask(TaskRequest) returns (TaskResponse);
+}
+
+message ServerInfo {
+  string id = 1;
+  string address = 2;
+  int32 port = 3;
+}
+
+message RegistrationAck {
+  string message = 1;
+}
+
+message LoadInfo {
+  string id = 1;
+  float load = 2;
+}
+
+message StatusAck {
+  string message = 1;
+}
+
+message ClientRequest {
+  string client_id = 1;
+  string task = 2;
+}
+
+message TaskRequest {
+  string client_id = 1;
+  string task = 2;
+}
+
+message TaskResponse {
+  string result = 1;
+}
