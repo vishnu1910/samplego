@@ -1,4 +1,4 @@
-module github.com/vishnu1910/samplego/protofiles
+module github.com/vishnu1910/samplego
 
 go 1.24.0
 
