@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/vishnu1910/samplego/q2/protofiles/mrpb"
 	"google.golang.org/grpc"
 
 	// Import the generated package; ensure the import path matches your setup.
-	mr "github.com/vishnu1910/samplego/q2/protofiles/mrpb"
 )
 
 // Define task statuses.
