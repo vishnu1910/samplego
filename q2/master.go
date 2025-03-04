@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc"
 
 	// Import the generated package; ensure the import path matches your setup.
-	"mrpb"
+	mr "github.com/vishnu1910/samplego/q2/protofiles/mrpb"
 )
 
 // Define task statuses.
