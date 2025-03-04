@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/vishnu1910/samplego"
+	pb "github.com/vishnu1910/samplego/protofiles"
 	"google.golang.org/protobuf/proto"
 )
 
