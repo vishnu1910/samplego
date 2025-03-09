@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package mapreduce;
+
+option go_package = "mapreduce/proto";
+
+// Task types.
+enum TaskType {
+    MAP = 0;
+    REDUCE = 1;
+    WAIT = 2;
+    EXIT = 3;
+}
+
+// Request message from a worker.
+message TaskRequest {
+    string worker_id = 1;
+}
+
+// Response message from the master.
+message TaskAssignment {
+    TaskType task_type = 1;
+    int32 task_id = 2;
+    // For map tasks: the input file name.
+    string input_file = 3;
+    // For reduce tasks: list of intermediate file names.
+    repeated string intermediate_files = 4;
+}
+
+// Message for task completion.
+message TaskResult {
+    string worker_id = 1;
+    int32 task_id = 2;
+    bool success = 3;
+    // For reduce tasks, could be the output file name.
+    string output_file = 4;
+}
+
+import "google/protobuf/empty.proto";
+
+service MasterService {
+    // Worker requests a task.
+    rpc RequestTask(TaskRequest) returns (TaskAssignment);
+    // Worker reports task completion.
+    rpc ReportTask(TaskResult) returns (google.protobuf.Empty);
+}
+

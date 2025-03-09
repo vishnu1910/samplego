@@ -1,0 +1,65 @@
+syntax = "proto3";
+package payment;
+
+option go_package = "./paymentpb";
+
+// ---------- Client <-> Payment Gateway ----------
+
+message PaymentRequest {
+  string client_id = 1;
+  string transaction_id = 2;
+  float amount = 3;
+  // The bank identifiers will be used as addresses (e.g., "localhost:50061")
+  string source_bank_addr = 4;
+  string dest_bank_addr = 5;
+  string auth_token = 6; // simple authentication token
+}
+
+message PaymentResponse {
+  string status = 1; // "SUCCESS" or "FAILURE"
+  string message = 2;
+}
+
+// Service exposed by the Payment Gateway for clients.
+service PaymentGatewayService {
+  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
+}
+
+// ---------- Payment Gateway <-> Bank Servers (2PC) ----------
+
+message PrepareRequest {
+  string transaction_id = 1;
+  float amount = 2;
+  string client_id = 3;
+}
+
+message PrepareResponse {
+  bool vote = 1; // true means “prepared” (YES), false means NO
+  string message = 2;
+}
+
+message CommitRequest {
+  string transaction_id = 1;
+}
+
+message CommitResponse {
+  bool committed = 1;
+  string message = 2;
+}
+
+message AbortRequest {
+  string transaction_id = 1;
+}
+
+message AbortResponse {
+  bool aborted = 1;
+  string message = 2;
+}
+
+// Service implemented by Bank Servers.
+service BankService {
+  rpc PreparePayment(PrepareRequest) returns (PrepareResponse);
+  rpc CommitPayment(CommitRequest) returns (CommitResponse);
+  rpc AbortPayment(AbortRequest) returns (AbortResponse);
+}
+

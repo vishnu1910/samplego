@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	pb "lbpb"
+	pb "github.com/vishnu1910/samplego/q1/protofiles/lbpb"
 )
 
 func main() {

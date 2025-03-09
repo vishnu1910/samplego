@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	pb "github.com/vishnu1910/samplego/protofiles"
+	personpb "github.com/vishnu1910/samplego/protofiles"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -14,7 +14,7 @@ func main() {
 		Age: 30,
 	}
 
-	data, err := proto.Marshall(person)
+	data, err := proto.Marshal(person)
 	if err != nil {
 		log.Fatalf("Failed to encode person: %v", err)
 	}
