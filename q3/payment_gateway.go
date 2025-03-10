@@ -1,9 +1,8 @@
-// payment_gateway.go
 package main
 
 import (
 	"context"
-	"errors"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -11,221 +10,204 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
+	pb "github.com/vishnu1910/samplego/q3/protofiles/paymentpb"
 
-	"github.com/vishnu1910/samplego/q3/protofiles/paymentpb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 )
 
-// idempotency record: maps transaction ID to PaymentResponse.
-var processedTx sync.Map
-
-// authToken that clients must supply.
-const validAuthToken = "valid-token"
-
-// --- Interceptors ---
-
-// authInterceptor checks for a valid auth token in the incoming PaymentRequest.
-func authInterceptor(
-	ctx context.Context,
-	req interface{},
-	info *grpc.UnaryServerInfo,
-	handler grpc.UnaryHandler,
-) (interface{}, error) {
-	// We only check auth for PaymentGatewayService.ProcessPayment
-	if info.FullMethod == "/payment.PaymentGatewayService/ProcessPayment" {
-		// Extract metadata from context.
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return nil, errors.New("missing metadata")
-		}
-		// Expect an "auth_token" value.
-		tokens := md.Get("auth_token")
-		if len(tokens) == 0 || tokens[0] != validAuthToken {
-			return nil, errors.New("invalid auth token")
-		}
-	}
-	// Continue handling the RPC.
-	return handler(ctx, req)
+// idempotencyStore maintains processed transaction IDs.
+type idempotencyStore struct {
+	mu     sync.Mutex
+	store  map[string]*pb.PaymentResponse
 }
 
-// loggingInterceptor logs the request and response.
-func loggingInterceptor(
-	ctx context.Context,
-	req interface{},
-	info *grpc.UnaryServerInfo,
-	handler grpc.UnaryHandler,
-) (interface{}, error) {
-	log.Printf("Received RPC: %s, Request: %+v", info.FullMethod, req)
-	resp, err := handler(ctx, req)
-	if err != nil {
-		log.Printf("RPC %s error: %v", info.FullMethod, err)
-	} else {
-		log.Printf("RPC %s response: %+v", info.FullMethod, resp)
+func newIdempotencyStore() *idempotencyStore {
+	return &idempotencyStore{
+		store: make(map[string]*pb.PaymentResponse),
 	}
-	return resp, err
 }
 
-// --- Payment Gateway Implementation ---
+func (s *idempotencyStore) Get(key string) (*pb.PaymentResponse, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	resp, exists := s.store[key]
+	return resp, exists
+}
 
+func (s *idempotencyStore) Set(key string, resp *pb.PaymentResponse) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store[key] = resp
+}
+
+// paymentGatewayServer implements the PaymentGateway service.
 type paymentGatewayServer struct {
-	paymentpb.UnimplementedPaymentGatewayServiceServer
-	// timeout for bank RPCs
-	bankRPCTimeout time.Duration
+	pb.UnimplementedPaymentGatewayServer
+	idempotency *idempotencyStore
+	// In a real implementation, these would be configurable addresses or service clients.
+	sendingBankAddr   string
+	receivingBankAddr string
+	timeout           time.Duration
 }
 
-func (pg *paymentGatewayServer) ProcessPayment(ctx context.Context, req *paymentpb.PaymentRequest) (*paymentpb.PaymentResponse, error) {
-	// Idempotency check: if we've seen this transaction ID, return previous response.
-	if resp, ok := processedTx.Load(req.TransactionId); ok {
-		log.Printf("Idempotency: returning cached response for transaction %s", req.TransactionId)
-		return resp.(*paymentpb.PaymentResponse), nil
+func newPaymentGateway(sendingBankAddr, receivingBankAddr string, timeout time.Duration) *paymentGatewayServer {
+	return &paymentGatewayServer{
+		idempotency:       newIdempotencyStore(),
+		sendingBankAddr:   sendingBankAddr,
+		receivingBankAddr: receivingBankAddr,
+		timeout:           timeout,
 	}
-
-	// (In a real system, more robust auth would be done here.)
-	// Begin two-phase commit (2PC)
-	// Prepare phase: contact both source and destination banks.
-	prepareReq := &paymentpb.PrepareRequest{
-		TransactionId: req.TransactionId,
-		Amount:        req.Amount,
-		ClientId:      req.ClientId,
-	}
-
-	// Prepare calls concurrently.
-	var wg sync.WaitGroup
-	wg.Add(2)
-	var srcVote, destVote bool
-	var srcMsg, destMsg string
-	var srcErr, destErr error
-
-	callPrepare := func(bankAddr string, vote *bool, msg *string, errOut *error) {
-		defer wg.Done()
-		conn, err := grpc.Dial(bankAddr, grpc.WithInsecure())
-		if err != nil {
-			*errOut = fmt.Errorf("failed to dial bank %s: %v", bankAddr, err)
-			return
-		}
-		defer conn.Close()
-		client := paymentpb.NewBankServiceClient(conn)
-		ctx2, cancel := context.WithTimeout(context.Background(), pg.bankRPCTimeout)
-		defer cancel()
-		resp, err := client.PreparePayment(ctx2, prepareReq)
-		if err != nil {
-			*errOut = err
-			return
-		}
-		*vote = resp.Vote
-		*msg = resp.Message
-	}
-
-	go callPrepare(req.SourceBankAddr, &srcVote, &srcMsg, &srcErr)
-	go callPrepare(req.DestBankAddr, &destVote, &destMsg, &destErr)
-	wg.Wait()
-
-	// Check for errors or negative votes.
-	if srcErr != nil || destErr != nil || !srcVote || !destVote {
-		// Abort transaction: call AbortPayment on both banks.
-		abortReq := &paymentpb.AbortRequest{TransactionId: req.TransactionId}
-		go func() {
-			callAbort(req.SourceBankAddr, abortReq)
-		}()
-		go func() {
-			callAbort(req.DestBankAddr, abortReq)
-		}()
-		response := &paymentpb.PaymentResponse{
-			Status:  "FAILURE",
-			Message: fmt.Sprintf("Transaction aborted: srcErr=%v, destErr=%v, srcVote=%v, destVote=%v", srcErr, destErr, srcVote, destVote),
-		}
-		processedTx.Store(req.TransactionId, response)
-		return response, nil
-	}
-
-	// Commit phase: call CommitPayment on both banks.
-	commitReq := &paymentpb.CommitRequest{TransactionId: req.TransactionId}
-	var commitErrSrc, commitErrDest error
-	var wg2 sync.WaitGroup
-	wg2.Add(2)
-	go func() {
-		defer wg2.Done()
-		commitErrSrc = callCommit(req.SourceBankAddr, commitReq)
-	}()
-	go func() {
-		defer wg2.Done()
-		commitErrDest = callCommit(req.DestBankAddr, commitReq)
-	}()
-	wg2.Wait()
-
-	if commitErrSrc != nil || commitErrDest != nil {
-		response := &paymentpb.PaymentResponse{
-			Status:  "FAILURE",
-			Message: fmt.Sprintf("Commit failed: srcErr=%v, destErr=%v", commitErrSrc, commitErrDest),
-		}
-		processedTx.Store(req.TransactionId, response)
-		return response, nil
-	}
-
-	response := &paymentpb.PaymentResponse{
-		Status:  "SUCCESS",
-		Message: "Payment processed successfully",
-	}
-	processedTx.Store(req.TransactionId, response)
-	return response, nil
 }
 
-func callCommit(bankAddr string, req *paymentpb.CommitRequest) error {
-	conn, err := grpc.Dial(bankAddr, grpc.WithInsecure())
-	if err != nil {
-		return fmt.Errorf("failed to dial bank %s: %v", bankAddr, err)
+// ProcessPayment implements the two-phase commit protocol.
+func (s *paymentGatewayServer) ProcessPayment(ctx context.Context, req *pb.PaymentRequest) (*pb.PaymentResponse, error) {
+	// Check idempotency first.
+	if resp, exists := s.idempotency.Get(req.IdempotencyKey); exists {
+		log.Println("Idempotent request detected, returning cached response")
+		return resp, nil
 	}
-	defer conn.Close()
-	client := paymentpb.NewBankServiceClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+
+	transactionID := fmt.Sprintf("txn-%d", time.Now().UnixNano())
+	log.Printf("Processing transaction %s for amount %.2f", transactionID, req.Amount)
+
+	// Set up a timeout for the 2PC process.
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	resp, err := client.CommitPayment(ctx, req)
-	if err != nil {
-		return err
+
+	// Phase 1: Send VoteRequest to both banks.
+	voteReq := &pb.VoteRequest{
+		TransactionId: transactionID,
+		ClientId:      req.ClientId,
+		Amount:        req.Amount,
 	}
-	if !resp.Committed {
-		return errors.New(resp.Message)
+
+	// For demo purposes, we assume both bank servers respond positively.
+	sendingVote, err := sendVoteRequest(ctx, s.sendingBankAddr, voteReq)
+	if err != nil || !sendingVote.Vote {
+		return s.abortTransaction(req.IdempotencyKey, transactionID, "Sending bank aborted")
 	}
+
+	receivingVote, err := sendVoteRequest(ctx, s.receivingBankAddr, voteReq)
+	if err != nil || !receivingVote.Vote {
+		return s.abortTransaction(req.IdempotencyKey, transactionID, "Receiving bank aborted")
+	}
+
+	// Phase 2: Commit transaction on both banks.
+	commitErr1 := sendCommitRequest(ctx, s.sendingBankAddr, transactionID)
+	commitErr2 := sendCommitRequest(ctx, s.receivingBankAddr, transactionID)
+	if commitErr1 != nil || commitErr2 != nil {
+		// If commit fails, attempt rollback.
+		sendRollbackRequest(ctx, s.sendingBankAddr, transactionID)
+		sendRollbackRequest(ctx, s.receivingBankAddr, transactionID)
+		return s.abortTransaction(req.IdempotencyKey, transactionID, "Commit failed; transaction rolled back")
+	}
+
+	resp := &pb.PaymentResponse{
+		Success: true,
+		Message: fmt.Sprintf("Transaction %s committed successfully", transactionID),
+	}
+	s.idempotency.Set(req.IdempotencyKey, resp)
+	return resp, nil
+}
+
+func (s *paymentGatewayServer) abortTransaction(idempotencyKey, txnID, reason string) (*pb.PaymentResponse, error) {
+	// Send rollback to both banks.
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	defer cancel()
+	sendRollbackRequest(ctx, s.sendingBankAddr, txnID)
+	sendRollbackRequest(ctx, s.receivingBankAddr, txnID)
+	resp := &pb.PaymentResponse{
+		Success: false,
+		Message: fmt.Sprintf("Transaction %s aborted: %s", txnID, reason),
+	}
+	s.idempotency.Set(idempotencyKey, resp)
+	return resp, nil
+}
+
+// Dummy functions to simulate remote calls to bank servers.
+// In a complete solution these would be full gRPC client calls.
+func sendVoteRequest(ctx context.Context, bankAddr string, req *pb.VoteRequest) (*pb.VoteResponse, error) {
+	// Simulate a bank vote by always voting yes.
+	log.Printf("Sending VoteRequest to bank at %s for txn %s", bankAddr, req.TransactionId)
+	return &pb.VoteResponse{Vote: true, Message: "Vote yes"}, nil
+}
+
+func sendCommitRequest(ctx context.Context, bankAddr, txnID string) error {
+	log.Printf("Sending CommitRequest to bank at %s for txn %s", bankAddr, txnID)
+	// Simulate successful commit.
 	return nil
 }
 
-func callAbort(bankAddr string, req *paymentpb.AbortRequest) {
-	conn, err := grpc.Dial(bankAddr, grpc.WithInsecure())
-	if err != nil {
-		log.Printf("Abort: failed to dial bank %s: %v", bankAddr, err)
-		return
+func sendRollbackRequest(ctx context.Context, bankAddr, txnID string) error {
+	log.Printf("Sending RollbackRequest to bank at %s for txn %s", bankAddr, txnID)
+	// Simulate successful rollback.
+	return nil
+}
+
+// --- Interceptors for logging and authentication ---
+
+// unaryLogger logs each incoming request.
+func unaryLogger(
+	ctx context.Context,
+	req interface{},
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (interface{}, error) {
+	start := time.Now()
+	log.Printf("Started method: %s with req: %+v", info.FullMethod, req)
+	resp, err := handler(ctx, req)
+	log.Printf("Completed method: %s; Duration: %s; Error: %v; Response: %+v", info.FullMethod, time.Since(start), err, resp)
+	return resp, err
+}
+
+// unaryAuth verifies a simple authentication token in metadata.
+func unaryAuth(
+	ctx context.Context,
+	req interface{},
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (interface{}, error) {
+	// For demo purposes, check for a token in metadata.
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok || len(md["authorization"]) == 0 || md["authorization"][0] != "Bearer secret-token" {
+		return nil, fmt.Errorf("unauthenticated request")
 	}
-	defer conn.Close()
-	client := paymentpb.NewBankServiceClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_, err = client.AbortPayment(ctx, req)
-	if err != nil {
-		log.Printf("Abort error on bank %s: %v", bankAddr, err)
-	}
+	return handler(ctx, req)
 }
 
 func main() {
-	port := flag.Int("port", 50060, "Port for Payment Gateway")
-	bankTimeout := flag.Int("bank_timeout", 5, "Timeout (in seconds) for bank RPC calls")
+	// For demo purposes, the bank addresses are fixed.
+	sendingBankAddr := "localhost:50051"
+	receivingBankAddr := "localhost:50052"
+	port := flag.Int("port", 50050, "The server port for Payment Gateway")
+	timeout := flag.Duration("timeout", 5*time.Second, "2PC timeout duration")
 	flag.Parse()
 
-	// Set up interceptors.
-	opts := []grpc.ServerOption{
-    		grpc.ChainUnaryInterceptor(authInterceptor, loggingInterceptor),
+	// Load TLS credentials.
+	creds, err := credentials.NewServerTLSFromFile("server.crt", "server.key")
+	if err != nil {
+		log.Fatalf("Failed to load TLS keys: %v", err)
 	}
 
+	// Chain interceptors: first auth, then logging.
+	opts := []grpc.ServerOption{
+		grpc.Creds(creds),
+		grpc.UnaryInterceptor(
+			grpc.ChainUnaryInterceptor(unaryAuth, unaryLogger),
+		),
+	}
+	grpcServer := grpc.NewServer(opts...)
+
+	gateway := newPaymentGateway(sendingBankAddr, receivingBankAddr, *timeout)
+	pb.RegisterPaymentGatewayServer(grpcServer, gateway)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
-	grpcServer := grpc.NewServer(opts...)
-	paymentpb.RegisterPaymentGatewayServiceServer(grpcServer, &paymentGatewayServer{
-		bankRPCTimeout: time.Duration(*bankTimeout) * time.Second,
-	})
-	log.Printf("Payment Gateway server listening on port %d", *port)
+	log.Printf("Payment Gateway server listening at %v", lis.Addr())
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}

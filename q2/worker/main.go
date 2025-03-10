@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -17,7 +16,6 @@ import (
 	pb "github.com/vishnu1910/samplego/q2/mapreduce/proto"
 
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // Global job type (set via command-line flag): "wc" or "ii".

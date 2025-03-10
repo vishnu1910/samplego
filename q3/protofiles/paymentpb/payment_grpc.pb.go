@@ -19,105 +19,143 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PaymentGatewayService_ProcessPayment_FullMethodName = "/payment.PaymentGatewayService/ProcessPayment"
+	PaymentGateway_ProcessPayment_FullMethodName = "/payment.PaymentGateway/ProcessPayment"
+	PaymentGateway_RegisterClient_FullMethodName = "/payment.PaymentGateway/RegisterClient"
 )
 
-// PaymentGatewayServiceClient is the client API for PaymentGatewayService service.
+// PaymentGatewayClient is the client API for PaymentGateway service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// Service exposed by the Payment Gateway for clients.
-type PaymentGatewayServiceClient interface {
+type PaymentGatewayClient interface {
+	// Process a payment from one bank to another.
 	ProcessPayment(ctx context.Context, in *PaymentRequest, opts ...grpc.CallOption) (*PaymentResponse, error)
+	// For simplicity, clients can register with the gateway.
+	RegisterClient(ctx context.Context, in *ClientRegistration, opts ...grpc.CallOption) (*RegistrationResponse, error)
 }
 
-type paymentGatewayServiceClient struct {
+type paymentGatewayClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewPaymentGatewayServiceClient(cc grpc.ClientConnInterface) PaymentGatewayServiceClient {
-	return &paymentGatewayServiceClient{cc}
+func NewPaymentGatewayClient(cc grpc.ClientConnInterface) PaymentGatewayClient {
+	return &paymentGatewayClient{cc}
 }
 
-func (c *paymentGatewayServiceClient) ProcessPayment(ctx context.Context, in *PaymentRequest, opts ...grpc.CallOption) (*PaymentResponse, error) {
+func (c *paymentGatewayClient) ProcessPayment(ctx context.Context, in *PaymentRequest, opts ...grpc.CallOption) (*PaymentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PaymentResponse)
-	err := c.cc.Invoke(ctx, PaymentGatewayService_ProcessPayment_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, PaymentGateway_ProcessPayment_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// PaymentGatewayServiceServer is the server API for PaymentGatewayService service.
-// All implementations must embed UnimplementedPaymentGatewayServiceServer
-// for forward compatibility.
-//
-// Service exposed by the Payment Gateway for clients.
-type PaymentGatewayServiceServer interface {
-	ProcessPayment(context.Context, *PaymentRequest) (*PaymentResponse, error)
-	mustEmbedUnimplementedPaymentGatewayServiceServer()
+func (c *paymentGatewayClient) RegisterClient(ctx context.Context, in *ClientRegistration, opts ...grpc.CallOption) (*RegistrationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegistrationResponse)
+	err := c.cc.Invoke(ctx, PaymentGateway_RegisterClient_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-// UnimplementedPaymentGatewayServiceServer must be embedded to have
+// PaymentGatewayServer is the server API for PaymentGateway service.
+// All implementations must embed UnimplementedPaymentGatewayServer
+// for forward compatibility.
+type PaymentGatewayServer interface {
+	// Process a payment from one bank to another.
+	ProcessPayment(context.Context, *PaymentRequest) (*PaymentResponse, error)
+	// For simplicity, clients can register with the gateway.
+	RegisterClient(context.Context, *ClientRegistration) (*RegistrationResponse, error)
+	mustEmbedUnimplementedPaymentGatewayServer()
+}
+
+// UnimplementedPaymentGatewayServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedPaymentGatewayServiceServer struct{}
+type UnimplementedPaymentGatewayServer struct{}
 
-func (UnimplementedPaymentGatewayServiceServer) ProcessPayment(context.Context, *PaymentRequest) (*PaymentResponse, error) {
+func (UnimplementedPaymentGatewayServer) ProcessPayment(context.Context, *PaymentRequest) (*PaymentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ProcessPayment not implemented")
 }
-func (UnimplementedPaymentGatewayServiceServer) mustEmbedUnimplementedPaymentGatewayServiceServer() {}
-func (UnimplementedPaymentGatewayServiceServer) testEmbeddedByValue()                               {}
+func (UnimplementedPaymentGatewayServer) RegisterClient(context.Context, *ClientRegistration) (*RegistrationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterClient not implemented")
+}
+func (UnimplementedPaymentGatewayServer) mustEmbedUnimplementedPaymentGatewayServer() {}
+func (UnimplementedPaymentGatewayServer) testEmbeddedByValue()                        {}
 
-// UnsafePaymentGatewayServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to PaymentGatewayServiceServer will
+// UnsafePaymentGatewayServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PaymentGatewayServer will
 // result in compilation errors.
-type UnsafePaymentGatewayServiceServer interface {
-	mustEmbedUnimplementedPaymentGatewayServiceServer()
+type UnsafePaymentGatewayServer interface {
+	mustEmbedUnimplementedPaymentGatewayServer()
 }
 
-func RegisterPaymentGatewayServiceServer(s grpc.ServiceRegistrar, srv PaymentGatewayServiceServer) {
-	// If the following call pancis, it indicates UnimplementedPaymentGatewayServiceServer was
+func RegisterPaymentGatewayServer(s grpc.ServiceRegistrar, srv PaymentGatewayServer) {
+	// If the following call pancis, it indicates UnimplementedPaymentGatewayServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&PaymentGatewayService_ServiceDesc, srv)
+	s.RegisterService(&PaymentGateway_ServiceDesc, srv)
 }
 
-func _PaymentGatewayService_ProcessPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _PaymentGateway_ProcessPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PaymentRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(PaymentGatewayServiceServer).ProcessPayment(ctx, in)
+		return srv.(PaymentGatewayServer).ProcessPayment(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: PaymentGatewayService_ProcessPayment_FullMethodName,
+		FullMethod: PaymentGateway_ProcessPayment_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PaymentGatewayServiceServer).ProcessPayment(ctx, req.(*PaymentRequest))
+		return srv.(PaymentGatewayServer).ProcessPayment(ctx, req.(*PaymentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// PaymentGatewayService_ServiceDesc is the grpc.ServiceDesc for PaymentGatewayService service.
+func _PaymentGateway_RegisterClient_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClientRegistration)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentGatewayServer).RegisterClient(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentGateway_RegisterClient_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentGatewayServer).RegisterClient(ctx, req.(*ClientRegistration))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// PaymentGateway_ServiceDesc is the grpc.ServiceDesc for PaymentGateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var PaymentGatewayService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "payment.PaymentGatewayService",
-	HandlerType: (*PaymentGatewayServiceServer)(nil),
+var PaymentGateway_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "payment.PaymentGateway",
+	HandlerType: (*PaymentGatewayServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "ProcessPayment",
-			Handler:    _PaymentGatewayService_ProcessPayment_Handler,
+			Handler:    _PaymentGateway_ProcessPayment_Handler,
+		},
+		{
+			MethodName: "RegisterClient",
+			Handler:    _PaymentGateway_RegisterClient_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -125,181 +163,183 @@ var PaymentGatewayService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	BankService_PreparePayment_FullMethodName = "/payment.BankService/PreparePayment"
-	BankService_CommitPayment_FullMethodName  = "/payment.BankService/CommitPayment"
-	BankService_AbortPayment_FullMethodName   = "/payment.BankService/AbortPayment"
+	Bank_VoteCommit_FullMethodName = "/payment.Bank/VoteCommit"
+	Bank_Commit_FullMethodName     = "/payment.Bank/Commit"
+	Bank_Rollback_FullMethodName   = "/payment.Bank/Rollback"
 )
 
-// BankServiceClient is the client API for BankService service.
+// BankClient is the client API for Bank service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// Service implemented by Bank Servers.
-type BankServiceClient interface {
-	PreparePayment(ctx context.Context, in *PrepareRequest, opts ...grpc.CallOption) (*PrepareResponse, error)
-	CommitPayment(ctx context.Context, in *CommitRequest, opts ...grpc.CallOption) (*CommitResponse, error)
-	AbortPayment(ctx context.Context, in *AbortRequest, opts ...grpc.CallOption) (*AbortResponse, error)
+type BankClient interface {
+	// Vote on a transaction (phase 1 of 2PC).
+	VoteCommit(ctx context.Context, in *VoteRequest, opts ...grpc.CallOption) (*VoteResponse, error)
+	// Commit a transaction (phase 2 of 2PC).
+	Commit(ctx context.Context, in *CommitRequest, opts ...grpc.CallOption) (*CommitResponse, error)
+	// Rollback a transaction.
+	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
 }
 
-type bankServiceClient struct {
+type bankClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewBankServiceClient(cc grpc.ClientConnInterface) BankServiceClient {
-	return &bankServiceClient{cc}
+func NewBankClient(cc grpc.ClientConnInterface) BankClient {
+	return &bankClient{cc}
 }
 
-func (c *bankServiceClient) PreparePayment(ctx context.Context, in *PrepareRequest, opts ...grpc.CallOption) (*PrepareResponse, error) {
+func (c *bankClient) VoteCommit(ctx context.Context, in *VoteRequest, opts ...grpc.CallOption) (*VoteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PrepareResponse)
-	err := c.cc.Invoke(ctx, BankService_PreparePayment_FullMethodName, in, out, cOpts...)
+	out := new(VoteResponse)
+	err := c.cc.Invoke(ctx, Bank_VoteCommit_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *bankServiceClient) CommitPayment(ctx context.Context, in *CommitRequest, opts ...grpc.CallOption) (*CommitResponse, error) {
+func (c *bankClient) Commit(ctx context.Context, in *CommitRequest, opts ...grpc.CallOption) (*CommitResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CommitResponse)
-	err := c.cc.Invoke(ctx, BankService_CommitPayment_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Bank_Commit_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *bankServiceClient) AbortPayment(ctx context.Context, in *AbortRequest, opts ...grpc.CallOption) (*AbortResponse, error) {
+func (c *bankClient) Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(AbortResponse)
-	err := c.cc.Invoke(ctx, BankService_AbortPayment_FullMethodName, in, out, cOpts...)
+	out := new(RollbackResponse)
+	err := c.cc.Invoke(ctx, Bank_Rollback_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// BankServiceServer is the server API for BankService service.
-// All implementations must embed UnimplementedBankServiceServer
+// BankServer is the server API for Bank service.
+// All implementations must embed UnimplementedBankServer
 // for forward compatibility.
-//
-// Service implemented by Bank Servers.
-type BankServiceServer interface {
-	PreparePayment(context.Context, *PrepareRequest) (*PrepareResponse, error)
-	CommitPayment(context.Context, *CommitRequest) (*CommitResponse, error)
-	AbortPayment(context.Context, *AbortRequest) (*AbortResponse, error)
-	mustEmbedUnimplementedBankServiceServer()
+type BankServer interface {
+	// Vote on a transaction (phase 1 of 2PC).
+	VoteCommit(context.Context, *VoteRequest) (*VoteResponse, error)
+	// Commit a transaction (phase 2 of 2PC).
+	Commit(context.Context, *CommitRequest) (*CommitResponse, error)
+	// Rollback a transaction.
+	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
+	mustEmbedUnimplementedBankServer()
 }
 
-// UnimplementedBankServiceServer must be embedded to have
+// UnimplementedBankServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedBankServiceServer struct{}
+type UnimplementedBankServer struct{}
 
-func (UnimplementedBankServiceServer) PreparePayment(context.Context, *PrepareRequest) (*PrepareResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method PreparePayment not implemented")
+func (UnimplementedBankServer) VoteCommit(context.Context, *VoteRequest) (*VoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VoteCommit not implemented")
 }
-func (UnimplementedBankServiceServer) CommitPayment(context.Context, *CommitRequest) (*CommitResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CommitPayment not implemented")
+func (UnimplementedBankServer) Commit(context.Context, *CommitRequest) (*CommitResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Commit not implemented")
 }
-func (UnimplementedBankServiceServer) AbortPayment(context.Context, *AbortRequest) (*AbortResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AbortPayment not implemented")
+func (UnimplementedBankServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Rollback not implemented")
 }
-func (UnimplementedBankServiceServer) mustEmbedUnimplementedBankServiceServer() {}
-func (UnimplementedBankServiceServer) testEmbeddedByValue()                     {}
+func (UnimplementedBankServer) mustEmbedUnimplementedBankServer() {}
+func (UnimplementedBankServer) testEmbeddedByValue()              {}
 
-// UnsafeBankServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to BankServiceServer will
+// UnsafeBankServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to BankServer will
 // result in compilation errors.
-type UnsafeBankServiceServer interface {
-	mustEmbedUnimplementedBankServiceServer()
+type UnsafeBankServer interface {
+	mustEmbedUnimplementedBankServer()
 }
 
-func RegisterBankServiceServer(s grpc.ServiceRegistrar, srv BankServiceServer) {
-	// If the following call pancis, it indicates UnimplementedBankServiceServer was
+func RegisterBankServer(s grpc.ServiceRegistrar, srv BankServer) {
+	// If the following call pancis, it indicates UnimplementedBankServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&BankService_ServiceDesc, srv)
+	s.RegisterService(&Bank_ServiceDesc, srv)
 }
 
-func _BankService_PreparePayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PrepareRequest)
+func _Bank_VoteCommit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VoteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(BankServiceServer).PreparePayment(ctx, in)
+		return srv.(BankServer).VoteCommit(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: BankService_PreparePayment_FullMethodName,
+		FullMethod: Bank_VoteCommit_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BankServiceServer).PreparePayment(ctx, req.(*PrepareRequest))
+		return srv.(BankServer).VoteCommit(ctx, req.(*VoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _BankService_CommitPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Bank_Commit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CommitRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(BankServiceServer).CommitPayment(ctx, in)
+		return srv.(BankServer).Commit(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: BankService_CommitPayment_FullMethodName,
+		FullMethod: Bank_Commit_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BankServiceServer).CommitPayment(ctx, req.(*CommitRequest))
+		return srv.(BankServer).Commit(ctx, req.(*CommitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _BankService_AbortPayment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AbortRequest)
+func _Bank_Rollback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RollbackRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(BankServiceServer).AbortPayment(ctx, in)
+		return srv.(BankServer).Rollback(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: BankService_AbortPayment_FullMethodName,
+		FullMethod: Bank_Rollback_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BankServiceServer).AbortPayment(ctx, req.(*AbortRequest))
+		return srv.(BankServer).Rollback(ctx, req.(*RollbackRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// BankService_ServiceDesc is the grpc.ServiceDesc for BankService service.
+// Bank_ServiceDesc is the grpc.ServiceDesc for Bank service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var BankService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "payment.BankService",
-	HandlerType: (*BankServiceServer)(nil),
+var Bank_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "payment.Bank",
+	HandlerType: (*BankServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "PreparePayment",
-			Handler:    _BankService_PreparePayment_Handler,
+			MethodName: "VoteCommit",
+			Handler:    _Bank_VoteCommit_Handler,
 		},
 		{
-			MethodName: "CommitPayment",
-			Handler:    _BankService_CommitPayment_Handler,
+			MethodName: "Commit",
+			Handler:    _Bank_Commit_Handler,
 		},
 		{
-			MethodName: "AbortPayment",
-			Handler:    _BankService_AbortPayment_Handler,
+			MethodName: "Rollback",
+			Handler:    _Bank_Rollback_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
