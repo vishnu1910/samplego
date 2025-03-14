@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package payment;
+
+option go_package = "./pb";
+
+// ------------------ Payment Gateway Service ------------------
+service PaymentGateway {
+  // Client registration (authentication/authorization)
+  rpc RegisterClient(RegisterRequest) returns (RegisterResponse);
+  // Process a payment using 2PC
+  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
+  // Query client balance
+  rpc GetBalance(BalanceRequest) returns (BalanceResponse);
+}
+
+// ------------------ Bank Service (used for 2PC) ------------------
+service BankService {
+  // 2PC Prepare phase
+  rpc Prepare(PrepareRequest) returns (PrepareResponse);
+  // 2PC Commit phase
+  rpc Commit(CommitRequest) returns (CommitResponse);
+  // 2PC Abort phase
+  rpc Abort(AbortRequest) returns (AbortResponse);
+  // Query account balance
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
+}
+
+// ------------------ Payment Gateway Messages ------------------
+message RegisterRequest {
+  string username = 1;
+  string password = 2;
+  string bank = 3;
+  string account_number = 4;
+}
+
+message RegisterResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message PaymentRequest {
+  string client_id = 1;
+  string idempotency_key = 2;
+  string from_bank = 3;      // sender's bank name
+  string from_account = 4;     // sender's account number
+  string to_bank = 5;        // receiver's bank name
+  string to_account = 6;       // receiver's account number
+  double amount = 7;
+}
+
+message PaymentResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message BalanceRequest {
+  string client_id = 1;
+}
+
+message BalanceResponse {
+  double balance = 1;
+  string message = 2;
+}
+
+// ------------------ Bank Service Messages (2PC) ------------------
+message PrepareRequest {
+  string transaction_id = 1;
+  string account_number = 2;
+  double amount = 3; // For sender: amount to deduct; for receiver: amount to add.
+}
+
+message PrepareResponse {
+  bool canCommit = 1;
+  string message = 2;
+}
+
+message CommitRequest {
+  string transaction_id = 1;
+}
+
+message CommitResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message AbortRequest {
+  string transaction_id = 1;
+}
+
+message AbortResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetAccountRequest {
+  string account_number = 1;
+}
+
+message GetAccountResponse {
+  double balance = 1;
+  string message = 2;
+}
+
