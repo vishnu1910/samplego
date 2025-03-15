@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package byzantine;
+
+option go_package = "./byzantine";
+
+// The Byzantine service defines a single RPC for sending messages.
+service Byzantine {
+  rpc SendMessage(MessageRequest) returns (MessageResponse) {}
+}
+
+// MessageRequest carries the sender’s id, the simulation round, and the order.
+message MessageRequest {
+  int32 round = 1;
+  int32 senderId = 2;
+  string order = 3;
+}
+
+// MessageResponse is a simple acknowledgment.
+message MessageResponse {
+  bool ack = 1;
+}
+
