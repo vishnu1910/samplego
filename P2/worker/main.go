@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/vishnu1910/samplego/P2/mapreduce"
+	pb "github.com/vishnu1910/samplego/P2/protofiles/mapreduce"
 
 	"google.golang.org/grpc"
 )
@@ -220,6 +220,15 @@ func main() {
 	}
 	defer conn.Close()
 	client := pb.NewMasterServiceClient(conn)
+	
+	// Register worker before requesting tasks
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err = client.RegisterWorker(ctx, &pb.WorkerRegisterRequest{WorkerId: *workerID})
+	cancel()
+	if err != nil {
+		log.Fatalf("Error registering worker %s: %v", *workerID, err)
+	}
+	log.Printf("Worker %s registered with master.", *workerID)
 
 	for {
 		// Request a task.

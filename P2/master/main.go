@@ -45,6 +45,7 @@ type MasterServer struct {
 	numReduce int
 	// Total number of map tasks (used to compute intermediate file names).
 	numMap int
+	registeredWorkers map[string]bool
 }
 
 func NewMasterServer(jobType string, numMap, numReduce int, inputFiles []string) *MasterServer {
@@ -150,7 +151,9 @@ func (m *MasterServer) RequestTask(ctx context.Context, req *pb.TaskRequest) (*p
 			return &pb.TaskAssignment{TaskType: pb.TaskType_WAIT}, nil
 		}
 	}
-
+	if m.phase == "register" {
+		return &pb.TaskAssignment{TaskType: pb.TaskType_WAIT}, nil
+	}
 	// If phase is done, tell workers to exit.
 	return &pb.TaskAssignment{TaskType: pb.TaskType_EXIT}, nil
 }
@@ -182,6 +185,30 @@ func (m *MasterServer) ReportTask(ctx context.Context, result *pb.TaskResult) (*
 	return &emptypb.Empty{}, nil
 }
 
+// RegisterWorker is called by a worker when it starts up.
+func (m *MasterServer) RegisterWorker(ctx context.Context, req *pb.WorkerRegisterRequest) (*pb.WorkerRegisterResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.registeredWorkers == nil {
+		m.registeredWorkers = make(map[string]bool)
+	}
+
+	// Register the worker
+	m.registeredWorkers[req.WorkerId] = true
+	log.Printf("Worker %s registered", req.WorkerId)
+
+	// Check if enough workers have registered before moving to the "map" phase.
+	if len(m.registeredWorkers) >= m.numReduce {
+		m.phase = "map"
+		log.Println("All workers registered. Starting Map phase.")
+	}
+
+	return &pb.WorkerRegisterResponse{Success: true}, nil
+}
+
+
+
 func main() {
 	// Command-line flags for the master.
 	jobType := flag.String("job", "wc", "Job type: 'wc' for word count, 'ii' for inverted index")
@@ -197,6 +224,7 @@ func main() {
 	// For this assignment, the number of map tasks equals the number of input files.
 	numMap := len(inputFiles)
 	master := NewMasterServer(*jobType, numMap, *numReduce, inputFiles)
+	master.phase = "register" // Start in the registration phase
 
 	// Start the gRPC server.
 	lis, err := net.Listen("tcp", ":50051")

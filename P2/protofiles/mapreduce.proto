@@ -4,7 +4,7 @@ package mapreduce;
 
 option go_package = "./mapreduce";
 
-// Task types.
+// Define Task types
 enum TaskType {
     MAP = 0;
     REDUCE = 1;
@@ -12,36 +12,44 @@ enum TaskType {
     EXIT = 3;
 }
 
-// Request message from a worker.
+// Request sent by a worker to register itself with the master
+message WorkerRegisterRequest {
+    string workerId = 1;
+}
+
+// Response to a worker's registration request
+message WorkerRegisterResponse {
+    bool success = 1;
+}
+
+// Request from a worker for a task
 message TaskRequest {
-    string worker_id = 1;
+    string workerId = 1;
 }
 
-// Response message from the master.
+// Response with a task assignment
 message TaskAssignment {
-    TaskType task_type = 1;
-    int32 task_id = 2;
-    // For map tasks: the input file name.
-    string input_file = 3;
-    // For reduce tasks: list of intermediate file names.
-    repeated string intermediate_files = 4;
+    TaskType taskType = 1;
+    int32 taskId = 2;
+    string inputFile = 3;
+    repeated string intermediateFiles = 4;
 }
 
-// Message for task completion.
+// Worker reports task completion
 message TaskResult {
-    string worker_id = 1;
-    int32 task_id = 2;
+    string workerId = 1;
+    int32 taskId = 2;
     bool success = 3;
-    // For reduce tasks, could be the output file name.
-    string output_file = 4;
+    string outputFile = 4;
 }
 
 import "google/protobuf/empty.proto";
 
+
+// Define the master service
 service MasterService {
-    // Worker requests a task.
     rpc RequestTask(TaskRequest) returns (TaskAssignment);
-    // Worker reports task completion.
     rpc ReportTask(TaskResult) returns (google.protobuf.Empty);
+    rpc RegisterWorker(WorkerRegisterRequest) returns (WorkerRegisterResponse);
 }
 
