@@ -1,2 +1,0 @@
-cookie file1.txt
-pancakes file2.txt
